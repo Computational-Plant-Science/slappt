@@ -1,0 +1,14 @@
+**.env
+**.pytest_cache
+**__pycache__
+**.eggs
+**.idea
+**/*.egg-info
+**/venv
+**/dist
+**/build
+slappt.*.sh
+**.swp
+scratch
+output
+**/_build
