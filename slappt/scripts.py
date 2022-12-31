@@ -124,7 +124,7 @@ class ScriptGenerator:
                 f"file=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
             )
 
-        commands = commands + ScriptGenerator.gen_apptainer_invocation(
+        commands = commands + ScriptGenerator.generate_invocation(
             work_dir=self.config.workdir,
             image=self.config.image,
             commands=self.config.entrypoint,
@@ -150,14 +150,20 @@ class ScriptGenerator:
         lines: List[str] = []
         files = []  # TODO: read from inputs.list
 
-        for _ in range(0, self.config.iterations):
+        for i in range(0, self.config.iterations):
             for file_name in files:
+                env = (
+                    self.config.environment if self.config.environment else []
+                )
+                env.append(EnvironmentVariable("SLAPPT_ITERATION", str(i + 1)))
                 path = join(self.config.workdir, file_name)
-                lines = lines + ScriptGenerator.gen_apptainer_invocation(
+                lines = lines + ScriptGenerator.generate_invocation(
                     work_dir=self.config.workdir,
                     image=self.config.image,
-                    commands=self.config.entrypoint.replace("$INPUT", path),
-                    env=self.config.environment,
+                    commands=self.config.entrypoint.replace(
+                        "$SLAPPT_INPUT", path
+                    ),
+                    env=env,
                     bind_mounts=self.config.bind_mounts,
                     no_cache=self.config.no_cache,
                     gpus=self.config.gpus,
@@ -173,7 +179,7 @@ class ScriptGenerator:
         return [SHEBANG] + headers + command
 
     @staticmethod
-    def gen_apptainer_invocation(
+    def generate_invocation(
         image: str,
         commands: str,
         work_dir: str = None,
@@ -187,30 +193,31 @@ class ScriptGenerator:
         singularity: bool = False,
     ) -> List[str]:
         command = ""
-
-        # prepend environment variables in SINGULARITYENV_<key> format
+        program = "singularity" if singularity else "apptainer"
+        # prepend env vars
         if env is not None:
             if len(env) > 0:
+                prefix = f"{program.upper()}ENV_"
                 command += " ".join(
                     [
-                        f"SINGULARITYENV_{v['key'].upper().replace(' ', '_')}=\"{v['value']}\""
+                        f"{prefix}{v['key'].upper().replace(' ', '_')}=\"{v['value']}\""
                         for v in env
                     ]
                 )
                 command += " "
 
         # command base
-        command += f"{'singularity' if singularity else 'apptainer'} exec"
+        command += f"{program} exec"
 
         # working directory (container home)
         if work_dir is not None:
             command += f" --home {work_dir}"
 
-        # add bind mount arguments
+        # bind mounts
         if bind_mounts is not None and len(bind_mounts) > 0:
             command += " --bind " + ",".join([str(bm) for bm in bind_mounts])
 
-        # whether to use the Singularity cache
+        # whether to use the cache
         if no_cache:
             command += " --disable-cache"
 
@@ -218,15 +225,17 @@ class ScriptGenerator:
         if gpus:
             command += " --nv"
 
-        # append the command
+        # shell selection
         if shell is None:
             shell = "sh"
+
+        # construct the command
         command += f' {image} {shell.value if isinstance(shell, Shell) else shell} -c "{commands}"'
 
-        # docker auth info (optional)
+        # docker auth info
         if docker_username is not None and docker_password is not None:
             command = (
-                f"SINGULARITY_DOCKER_USERNAME={docker_username} SINGULARITY_DOCKER_PASSWORD={docker_password} "
+                f"{program.upper()}_DOCKER_USERNAME={docker_username} {program.upper()}_DOCKER_PASSWORD={docker_password} "
                 + command
             )
 

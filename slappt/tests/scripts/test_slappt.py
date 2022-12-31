@@ -50,7 +50,7 @@ def test_script_with_inputs_file(tmp_path, file):
         file=str(tmp_path / file) if file else None,
         name=str(uuid4()),
         image="alpine",
-        entrypoint="cat $INPUT",
+        entrypoint="cat $SLAPPT_INPUT",
         workdir=str(tmp_path),
         email=email,
         partition=partition,
