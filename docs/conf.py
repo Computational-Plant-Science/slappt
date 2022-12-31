@@ -8,7 +8,7 @@
 
 project = 'slappt'
 author = 'Computational Plant Science Lab'
-release = '0.0.0'
+release = '0.0.1'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
