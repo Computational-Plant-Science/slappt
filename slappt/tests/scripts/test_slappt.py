@@ -13,10 +13,8 @@ email = environ.get("CLUSTER_EMAIL")
 
 
 # todo parametrize with optional params (e.g. account)
-@pytest.mark.parametrize("file", [None, "job.sh"])
-def test_script_hello_world(tmp_path, file):
+def test_script_hello_world(tmp_path):
     config = SlapptConfig(
-        file=str(tmp_path / file) if file else None,
         name=str(uuid4()),
         image="alpine",
         entrypoint="echo 'hello world'",
@@ -30,8 +28,7 @@ def test_script_hello_world(tmp_path, file):
     assert script[0].startswith("#!/bin/bash")
 
 
-@pytest.mark.parametrize("file", [None, "job.sh"])
-def test_script_with_inputs_file(tmp_path, file):
+def test_script_with_inputs_file(tmp_path):
     input_file_1 = tmp_path / "input_1.txt"
     input_file_2 = tmp_path / "input_2.txt"
     inputs_file = tmp_path / "inputs.txt"
@@ -47,7 +44,6 @@ def test_script_with_inputs_file(tmp_path, file):
         f.write(str(input_file_2))
 
     config = SlapptConfig(
-        file=str(tmp_path / file) if file else None,
         name=str(uuid4()),
         image="alpine",
         entrypoint="cat $SLAPPT_INPUT",
@@ -60,3 +56,22 @@ def test_script_with_inputs_file(tmp_path, file):
     script = generate_script(config)
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
+    assert script[-2].startswith("SLAPPT_INPUT=")
+
+
+def test_singularity_flag(tmp_path):
+    config = SlapptConfig(
+        name=str(uuid4()),
+        image="alpine",
+        entrypoint="echo 'hello world'",
+        workdir=str(tmp_path),
+        email=email,
+        partition=partition,
+        singularity=True,
+    )
+
+    script = generate_script(config)
+    pprint(script)
+    assert script[0].startswith("#!/bin/bash")
+    assert any(s.startswith("singularity exec") for s in script)
+    assert not any(s.startswith("apptainer exec") for s in script)

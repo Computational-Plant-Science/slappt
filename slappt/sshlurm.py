@@ -191,7 +191,6 @@ def submit_script(config: SlapptConfig, verbose: bool = False) -> str:
         return job_id
 
 
-# @click.group(invoke_without_command=True)
 @click.command()
 @click.argument("file", required=True)
 @click.option("--host", required=False, type=str)
@@ -202,7 +201,7 @@ def submit_script(config: SlapptConfig, verbose: bool = False) -> str:
 @click.option("--pkey", required=False, type=str, default="~/.ssh/id_rsa")
 @click.option("--allow_stderr", required=False, type=bool, default=False)
 @click.option("--timeout", required=False, type=int, default=15)
-@click.option("--verbose", required=False, type=bool, default=False)
+@click.option("--verbose", is_flag=True, default=False)
 def cli(
     file,
     workdir,

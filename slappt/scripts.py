@@ -17,7 +17,6 @@ from slappt.models import (
 )
 
 SHEBANG = "#!/bin/bash"
-LAUNCHER_SCRIPT_NAME = "launch"  # TODO make configurable
 
 
 class ScriptGenerator:
@@ -105,23 +104,11 @@ class ScriptGenerator:
         return headers
 
     def gen_job_command(self) -> List[str]:
-        if self.config.parallelism == Parallelism.LAUNCHER:
-            commands = self.gen_launcher_entrypoint()
-        elif self.config.parallelism == Parallelism.JOBARRAY:
-            commands = self.gen_job_array_script()
-        else:
-            raise ValueError(
-                f"Unsupported parallelism strategy {self.config.parallelism}"
-            )
-
-        self.logger.debug(f"Using run commands: {linesep.join(commands)}")
-        return commands
-
-    def gen_job_array_script(self) -> List[str]:
         commands = []
+
         if self.config.inputs:
             commands.append(
-                f"file=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
+                f"SLAPPT_INPUT=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
             )
 
         commands = commands + ScriptGenerator.generate_invocation(
@@ -135,43 +122,9 @@ class ScriptGenerator:
             shell=self.config.shell,
             singularity=self.config.singularity,
         )
+
+        self.logger.debug(f"Using run commands: {linesep.join(commands)}")
         return commands
-
-    def gen_launcher_entrypoint(self) -> List[str]:
-        commands = []
-        commands.append(f"export LAUNCHER_WORKDIR={self.config.workdir}")
-        commands.append(
-            f"export LAUNCHER_JOB_FILE={environ.get(LAUNCHER_SCRIPT_NAME)}"
-        )
-        commands.append("$LAUNCHER_DIR/paramrun")
-        return commands
-
-    def gen_launcher_script(self) -> List[str]:
-        lines: List[str] = []
-        files = []  # TODO: read from inputs.list
-
-        for i in range(0, self.config.iterations):
-            for file_name in files:
-                env = (
-                    self.config.environment if self.config.environment else []
-                )
-                env.append(EnvironmentVariable("SLAPPT_ITERATION", str(i + 1)))
-                path = join(self.config.workdir, file_name)
-                lines = lines + ScriptGenerator.generate_invocation(
-                    work_dir=self.config.workdir,
-                    image=self.config.image,
-                    commands=self.config.entrypoint.replace(
-                        "$SLAPPT_INPUT", path
-                    ),
-                    env=env,
-                    bind_mounts=self.config.bind_mounts,
-                    no_cache=self.config.no_cache,
-                    gpus=self.config.gpus,
-                    shell=self.config.shell,
-                    singularity=self.config.singularity,
-                )
-
-        return lines
 
     def gen_job_script(self) -> List[str]:
         headers = self.gen_job_headers()

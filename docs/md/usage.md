@@ -31,9 +31,9 @@ slappt --image docker://alpine \
        --entrypoint "echo 'hello world'"
 ```
 
-## Parallelism
+## Multiple jobs
 
-`slappt` is convenient not only for one-off container jobs, but for running multiple copies of a workflow in parallel (e.g. for Monte Carlo simulations), or mapping a workflow over a list of inputs. These use cases are accomplished with job arrays and can be configured via the `--iterations` and the `--inputs` options.
+`slappt` is convenient not only for one-off container jobs, but for running multiple copies of a workflow, possibly in parallel (e.g. for Monte Carlo simulations), or mapping a workflow over a list of inputs. These use cases are accomplished with job arrays and can be configured via the `--iterations` and the `--inputs` options.
 
 **Note:** your job remains limited by the number of nodes allocated to it by the scheduler. To run containers in parallel, you must request multiple nodes.
 
@@ -74,10 +74,15 @@ Assuming we have permission to submit to the `batch` partition, we can generate 
 ```shell
 slappt --image docker://alpine \
        --shell sh \
-       --nodes 2 \
        --partition batch \
        --entrypoint "cat \$SLAPPT_INPUT" \
-       --inputs inputs.txt
+       --inputs inputs.txt > job.sh
 ```
 
-This script will request 2 nodes, spawning a container on each with the `SLAPPT_INPUT` environment variable set one of the input files.
+This will generate a script to spawn a container, reading the input from the `SLAPPT_INPUT` environment variable.
+
+It can be then submitted with, for instance:
+
+```shell
+sbatch --array=1-2 job.sh
+```

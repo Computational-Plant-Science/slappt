@@ -54,7 +54,7 @@ def generate_script(config: SlapptConfig):
 @click.option("--cores", required=False, type=int, default=1)
 @click.option("--tasks", required=False, type=int, default=1)
 @click.option("--header_skip", required=False)
-@click.option("--singularity", required=False, type=bool, default=False)
+@click.option("--singularity", is_flag=True, default=False)
 def cli(
     ctx,
     file,
