@@ -42,6 +42,7 @@ class SlapptConfig:
     email: Optional[str] = None
     name: Optional[str] = None
     file: Optional[str] = None
+    pre: Optional[List[str]] = None
     inputs: Optional[str] = None
     # parallelism: Parallelism = Parallelism.JOBARRAY
     environment: Optional[List[EnvironmentVariable]] = None

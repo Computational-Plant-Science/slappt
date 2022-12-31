@@ -3,6 +3,7 @@ from os import linesep
 from os.path import join
 from pathlib import Path
 from subprocess import PIPE, Popen
+from typing import List, Optional
 
 import click
 import yaml
@@ -42,21 +43,30 @@ def get_client(config: SlapptConfig) -> SSH:
 
 def run_cmd(*args, verbose: bool = False, **kwargs):
     args = [str(g) for g in args]
+
     if verbose:
-        print("running: " + " ".join(args))
+        print(f"Running: {args}")
+
     p = Popen(args, stdout=PIPE, stderr=PIPE, **kwargs)
     stdout, stderr = p.communicate()
     stdout = stdout.decode()
     stderr = stderr.decode()
     returncode = p.returncode
+
     if verbose:
-        print(f"stdout:\n{stdout}")
-        print(f"stderr:\n{stderr}")
-        print(f"returncode: {returncode}")
+        if stdout:
+            print(stdout)
+        if stderr:
+            print(stderr)
+
     return returncode, stdout, stderr
 
 
-def submit_script(config: SlapptConfig, verbose: bool = False) -> str:
+def submit_script(
+    config: SlapptConfig,
+    script: Optional[List[str]] = None,
+    verbose: bool = False,
+) -> str:
     def read_stream(str, name="stdout"):
         for line in iter(lambda: str.readline(2048), ""):
             clean = clean_html(line).strip()
@@ -64,81 +74,107 @@ def submit_script(config: SlapptConfig, verbose: bool = False) -> str:
                 print(f"Received {name} from '{config.host}': '{clean}'")
             yield clean
 
+    # the script's name
+    script_name = (
+        Path(config.file).name if config.file else f"{config.name}.sh"
+    )
+
+    # the job working directory
+    workdir = config.workdir if config.workdir else ""
+
     # compose the submission command, determining if we have inputs to map over
     input_lines = []
     if config.inputs:
         input_lines = Path(config.inputs).open("r").readlines()
-        command = f"sbatch --array=1-{len(input_lines)}"
+        command = (
+            f"sbatch --array=1-{len(input_lines)} {join(workdir, script_name)}"
+        )
     else:
-        command = f"sbatch {Path(config.file).name}"
+        command = f"sbatch {join(workdir, script_name)}"
 
     # copy files to the remote host
     if config.host:
         with get_client(config) as client:
             with client.open_sftp() as sftp:
 
-                # set working directory and make sure it exists
-                workdir = config.workdir if config.workdir else "~"
+                # create working directory
                 try:
                     sftp.mkdir(workdir)
-                except:
-                    warn(f"Working directory {workdir} already exists")
+                    if verbose:
+                        print(f"Created working directory: {workdir}")
+                except OSError:
+                    if verbose:
+                        print(f"Working directory already exists: {workdir}")
 
                 # copy inputs file if we have one
                 if config.inputs:
                     remote_path = join(workdir, Path(config.inputs).name)
-                    with sftp.file(remote_path, "w") as remote_file:
+                    with sftp.open(remote_path, "w") as remote_file:
                         for line in input_lines:
                             remote_file.write(f"{line}\n".encode("utf-8"))
                         remote_file.seek(0)
-                        print(
-                            f"Uploaded inputs file {remote_path} for {config.name}"
-                        )
+                        if verbose:
+                            print(f"Uploaded inputs file: {remote_path}")
 
-                # copy job script
-                remote_path = join(workdir, Path(config.file).name)
-                with Path(config.file).open("r") as local_file, sftp.file(
-                    remote_path, "w"
-                ) as remote_file:
-                    for line in local_file.readlines():
-                        remote_file.write(f"{line}\n".encode("utf-8"))
+                # copy job script, or write it if provided in text
+                remote_path = join(workdir, script_name)
+                with sftp.open(remote_path, "w") as remote_file:
+                    if config.file:
+                        with Path(config.file).open("r") as local_file:
+                            for line in local_file.readlines():
+                                remote_file.write(f"{line}\n".encode("utf-8"))
+                    else:
+                        for line in script:
+                            remote_file.write(f"{line}\n".encode("utf-8"))
                     remote_file.seek(0)
-                    print(
-                        f"Uploaded job script {remote_path} for {config.name}"
-                    )
+                    if verbose:
+                        print(f"Uploaded job script: {remote_path}")
 
             if verbose:
-                print(f"Submitting '{config.file}' to '{config.host}'")
+                print(f"Submitting to {config.host}: {config.name}")
 
-            stdin, stdout, stderr = client.exec_command(
-                f"bash --login -c '{command}'", get_pty=True
-            )
+            stdin, stdout, stderr = client.exec_command(command, get_pty=True)
             stdin.close()
 
-            if stdout.channel.recv_exit_status() != 0:
+            try:
+                stdout = [line for line in read_stream(stdout, "stdout")]
+                stderr = [line for line in read_stream(stderr, "stderr")]
+            except:
+                if stdout.channel.recv_exit_status() != 0:
+                    raise ExitStatusException(
+                        f"Received non-zero exit status from submission command on {config.host}\n{stdout if stdout is not None else ''}{stderr if stderr is not None else ''}"
+                    )
+                else:
+                    raise
+    else:
+        if not config.file:
+            with open(script_name, "w") as f:
+                f.write(linesep.join(script))
+            if verbose:
+                print(f"Wrote job script: {script_name}")
+
+        if verbose:
+            print(f"Submitting: {config.name}")
+
+        def expand(cmd):
+            return [c for c in cmd.split(" ") if c != ""]
+
+        for pre_cmd in config.pre if config.pre else []:
+            returncode, stdout, stderr = run_cmd(
+                *expand(pre_cmd), verbose=verbose
+            )
+
+            if returncode != 0:
                 raise ExitStatusException(
-                    f"Received non-zero exit status from '{config.host}': {stdout + stderr}"
+                    f"Received non-zero exit status from pre-command: {stdout + stderr}"
                 )
 
-            stdout = [line for line in read_stream(stdout, "stdout")]
-            stderr = [line for line in read_stream(stderr, "stderr")]
-    else:
-        if verbose:
-            print(f"Submitting '{config.file}'")
-
-        returncode, stdout, stderr = run_cmd(command, verbse=verbose)
+        returncode, stdout, stderr = run_cmd(*expand(command), verbose=verbose)
 
         if returncode != 0:
             raise ExitStatusException(
-                f"Received non-zero exit status: {stdout + stderr}"
+                f"Received non-zero exit status from submission command: {stdout + stderr}"
             )
-
-    if not config.allow_stderr and len(stderr) > 0:
-        raise ExitStatusException(f"Received stderr: {stderr}")
-
-    # return the job id
-    job_id = parse_job_id(stdout[-1])
-    return job_id
 
 
 @click.command()
@@ -270,6 +306,6 @@ def cli(
     script = generate_script(config)
 
     if submit:
-        click.echo(submit_script(config, verbose))
+        click.echo(submit_script(config, script=script, verbose=verbose))
     else:
         click.echo(linesep.join(script))

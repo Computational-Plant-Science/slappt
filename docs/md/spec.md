@@ -11,6 +11,7 @@ entrypoint:     # the command to run inside the container
 workdir:        # the working directory to use 
 email:          # the email address to send notifications to
 name:           # the name of the job (default: slappt.<guid>)
+pre:            # a list of commands to run before invoking the container (e.g. loading modules)
 inputs:         # a text file containing a newline-separated list of input files
 environment:    # a dictionary of environment variables to set
 bind_mounts:    # a list of bind mounts to use, in format <host path>:<container path>

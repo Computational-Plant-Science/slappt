@@ -87,7 +87,7 @@ def test_script_with_inputs_file(tmp_path):
     assert script[-2].startswith("SLAPPT_INPUT=")
 
 
-def test_singularity_flag(tmp_path):
+def test_script_with_singularity_flag(tmp_path):
     config = SlapptConfig(
         name=str(uuid4()),
         image="alpine",
@@ -103,6 +103,43 @@ def test_singularity_flag(tmp_path):
     assert script[0].startswith("#!/bin/bash")
     assert any(s.startswith("singularity exec") for s in script)
     assert not any(s.startswith("apptainer exec") for s in script)
+
+
+def test_script_with_pre_commands(tmp_path):
+    precmds = ["echo 'pre command 1'", "echo 'pre command 2'"]
+    config = SlapptConfig(
+        name=str(uuid4()),
+        image="alpine",
+        entrypoint="echo 'hello world'",
+        workdir=str(tmp_path),
+        email=CLUSTER_EMAIL,
+        partition=CLUSTER_PARTITION,
+    )
+
+    script = generate_script(config)
+    pprint(script)
+    assert script[0].startswith("#!/bin/bash")
+    assert not any(s.startswith("echo 'pre") for s in script)
+
+    config = SlapptConfig(
+        name=str(uuid4()),
+        image="alpine",
+        entrypoint="echo 'hello world'",
+        workdir=str(tmp_path),
+        email=CLUSTER_EMAIL,
+        partition=CLUSTER_PARTITION,
+        pre=precmds,
+    )
+
+    script = generate_script(config)
+    pprint(script)
+    assert script[0].startswith("#!/bin/bash")
+    for cmd in precmds:
+        assert any(s.startswith(cmd) for s in script)
+    for i, line in enumerate(script):
+        if line.startswith(precmds[0]):
+            assert script[i + 1].startswith(precmds[1])
+            assert script[i + 2].startswith("apptainer exec")
 
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
@@ -132,8 +169,7 @@ def test_submit_with_password_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)
 
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
@@ -151,5 +187,4 @@ def test_submit_with_key_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)

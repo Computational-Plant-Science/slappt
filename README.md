@@ -22,6 +22,10 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
+  - [Caveats](#caveats)
+    - [Shell selection](#shell-selection)
+    - [Singularity support](#singularity-support)
+    - [Pre-commands](#pre-commands)
 - [Documentation](#documentation)
 - [Disclaimer](#disclaimer)
 
@@ -29,13 +33,14 @@
 
 ## Overview
 
-`slappt` composes Slurm job scripts for [Apptainer](https://apptainer.org/docs/user/main/) workflows from config files or CLI args. 
+`slappt` generates and submits Slurm job scripts for [Apptainer](https://apptainer.org/docs/user/main/) workflows. Jobs can be configured in YAML or via CLI.
+
 
 ## Requirements
 
-`slappt` requires only Python3.8+.
+`slappt` requires Python3.8+ and a few core dependencies, including `click`, `pyaml`, `paramiko`, and `requests`, among others.
 
-`slappt` can also submit scripts to remote clusters. To submit a job script, the host machine must be able to connect via key- or password-authenticated SSH to the target cluster.
+To submit a job script, the host machine must either run `slurmctld` with standard commands available, or must be able to connect via key- or password-authenticated SSH to the target cluster.
 
 ## Installation
 
@@ -47,7 +52,7 @@ pip install slappt
 
 ## Quickstart
 
-Say you have a Slurm cluster with `apptainer` installed, and you have permission to submit to the `batch` partition.
+Say you have access to a Slurm cluster with `apptainer` installed, and you have permission to submit to the `batch` partition.
 
 Copy the `hello.yaml` file from the `examples` directory to your current working directory, then run:
 
@@ -63,8 +68,6 @@ slappt --image docker://alpine \
        --partition batch \
        --entrypoint "echo 'hello world'" > hello.sh
 ```
-
-**Note:** for most image definitions, specifying the `shell` is likely not necessary, as the default is `bash`. However, for images that don't have `bash` installed (e.g., `alphine` only has `sh`) a different shell must be selected.
 
 Your `hello.sh` script should now contain:
 
@@ -82,16 +85,35 @@ Your `hello.sh` script should now contain:
 apptainer exec docker://alpine sh -c "echo 'hello world'"
 ```
 
-If already on the cluster, just submit it as usual:
+If already on the cluster, use the `--submit` flag to submit the job directly. (Standard Slurm commands must be available for this to work.) In this case the job ID is shown if submission was successful.
+
+You can provide authentication information to submit the script to remote clusters over SSH. For instance, assuming you have key authentication set up and your key is `~/.ssh/id_rsa`:
 
 ```shell
-sbatch hello.sh
+slappt ... --host <cluster IP or FQDN> --username <username>
 ```
 
-If you're on a different machine, you can use the extra `sshlurm` command to submit the script over SSH. For instance, assuming you have key authentication set up for the cluster, and your key is `~/.ssh/id_rsa`:
+### Caveats
 
-```shell
-sshlurm hello.sh --host <cluster IP or FQDN> --username <username>
+There are a few things to note about the example above.
+
+#### Shell selection
+
+For most image definitions, specifying the `shell` is likely not necessary, as the default is `bash`. However, for images that don't have `bash` installed (e.g., `alphine` only has `sh`) a different shell must be selected.
+
+#### Singularity support
+
+If your cluster still uses `singularity`, pass the `--singularity` flag (or set the `singularity` key in the configuration file to `true`) to substitute `singularity` for `apptainer` in the command wrapping your workflow entrypoint.
+
+#### Pre-commands
+
+**Note:** if `apptainer` or `singularity` are not available by default on your cluster's compute nodes, you may need to add `--pre` commands (or a `pre` section to the configuration file), for instance `--pre "module load apptainer"`, or:
+
+```yaml
+...
+pre:
+  - module load apptainer
+...
 ```
 
 ## Documentation

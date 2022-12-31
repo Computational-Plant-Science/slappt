@@ -65,8 +65,7 @@ def test_submit_with_password_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)
 
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
@@ -84,5 +83,4 @@ def test_submit_with_key_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)

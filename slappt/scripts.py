@@ -126,8 +126,9 @@ class ScriptGenerator:
 
     def gen_job_script(self) -> List[str]:
         headers = self.gen_job_headers()
+        precmds = self.config.pre if self.config.pre else []
         command = self.gen_job_command()
-        return [SHEBANG] + headers + command
+        return [SHEBANG] + headers + precmds + command
 
     @staticmethod
     def generate_invocation(
