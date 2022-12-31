@@ -5,8 +5,8 @@
 [Slurm](https://slurm.schedmd.com/overview.html) scripts for [Apptainer](http://apptainer.org) jobs
 
 [![PyPI Version](https://img.shields.io/pypi/v/slappt.png)](https://pypi.python.org/pypi/slappt)
-[![PyPI Versions](https://img.shields.io/pypi/pyversions/slappt.png)](https://pypi.python.org/pypi/slappt)
 [![PyPI Status](https://img.shields.io/pypi/status/slappt.png)](https://pypi.python.org/pypi/slappt)
+[![PyPI Versions](https://img.shields.io/pypi/pyversions/slappt.png)](https://pypi.python.org/pypi/slappt)
 
 [![CI](https://github.com/Computational-Plant-Science/slappt/actions/workflows/ci.yml/badge.svg)](https://github.com/Computational-Plant-Science/slappt/actions/workflows/ci.yml)
 [![Documentation Status](https://readthedocs.org/projects/slappt/badge/?version=latest)](https://slappt.readthedocs.io/en/latest/?badge=latest)
