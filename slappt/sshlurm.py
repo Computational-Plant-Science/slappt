@@ -1,9 +1,11 @@
+from os.path import join
 from pathlib import Path
+from warnings import warn
 
 import click
 
 from slappt.exceptions import ExitStatusException
-from slappt.models import SlapptConfig
+from slappt.models import Parallelism, SlapptConfig
 from slappt.ssh import SSH
 from slappt.utils import clean_html, parse_job_id
 
@@ -103,9 +105,56 @@ def get_client(config: SlapptConfig) -> SSH:
         )
 
 
-def submit_script(config: SlapptConfig, verbose) -> str:
+def submit_script(config: SlapptConfig, verbose: bool = False) -> str:
     with get_client(config) as client:
-        command = f"sbatch {Path(config.file).name}"
+
+        # copy files to the remote host
+        with client.open_sftp() as sftp:
+
+            # expand the working directory
+            workdir = config.workdir if config.workdir else "~"
+
+            # make sure the remote workdir exists
+            try:
+                sftp.mkdir(workdir)
+            except:
+                warn(f"Working directory {workdir} already exists")
+
+            num_inputs = 0
+            if config.inputs:
+                # copy inputs file
+                remote_path = join(workdir, Path(config.inputs).name)
+                with Path(config.inputs).open("r") as local_file, sftp.file(
+                    remote_path, "w"
+                ) as remote_file:
+                    lines = local_file.readlines()
+                    num_inputs = len(lines)
+                    for line in lines:
+                        remote_file.write(f"{line}\n".encode("utf-8"))
+                    remote_file.seek(0)
+                    print(
+                        f"Uploaded inputs file {remote_path} for {config.name}"
+                    )
+
+            # copy job script
+            remote_path = join(workdir, Path(config.file).name)
+            with Path(config.file).open("r") as local_file, sftp.file(
+                remote_path, "w"
+            ) as remote_file:
+                for line in local_file.readlines():
+                    remote_file.write(f"{line}\n".encode("utf-8"))
+                remote_file.seek(0)
+                print(f"Uploaded job script {remote_path} for {config.name}")
+
+        # submit the job
+        # TODO: support TACC launcher instead of job arrays
+        if config.inputs:
+            command = f"sbatch --array=1-{num_inputs}"
+        elif config.iterations:
+            command = f"sbatch --array=1-{config.iterations}"
+        else:
+            command = f"sbatch {Path(config.file).name}"
+
         if verbose:
             print(f"Submitting '{config.file}' to '{config.host}'")
         stdin, stdout, stderr = client.exec_command(
@@ -137,6 +186,7 @@ def submit_script(config: SlapptConfig, verbose) -> str:
         elif not config.allow_stderr and len(errors) > 0:
             raise ExitStatusException(f"Received stderr: {errors}")
 
+        # return the job id
         job_id = parse_job_id(output[-1])
         return job_id
 

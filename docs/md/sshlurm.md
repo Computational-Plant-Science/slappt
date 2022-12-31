@@ -18,9 +18,24 @@ Use the `--password` option for password authentication, and the `--pkey` option
 
 ## Usage with `slappt`
 
-The `sshlurm` command pairs nicely with `slappt`, for instance:
+The `sshlurm` command pairs especially nicely with `slappt` to submit jobs in parallel. It's smart enough to automatically handle job arrays and/or launcher scripts.
+
+For instance, say you have a set of parameters:
 
 ```shell
-slappt config.yaml > job.sh
+1
+2
+3
+```
+
+Assuming you have key authentication set up:
+
+```shell
+slappt --image docker://alpine
+       --shell sh
+       --entrypoint "echo $SLAPPT_INPUT"
+       --inputs inputs.txt > job.sh
 sshlurm job.sh --host <your cluster IP or FQDN> --username <your username>
 ```
+
+This will copy `inputs.txt` to the remote cluster, submit an array of jobs, each of which has an environment with `$SLAPPT_INPUT` set to one of the provided input values.
