@@ -11,9 +11,9 @@ class Shell(Enum):
     SH = "sh"
 
 
-class Parallelism(Enum):
-    JOBARRAY = "jobarray"
-    LAUNCHER = "launcher"
+# class Parallelism(Enum):
+#     JOBARRAY = "jobarray"
+#     LAUNCHER = "launcher"
 
 
 @dataclass
@@ -43,8 +43,7 @@ class SlapptConfig:
     name: Optional[str] = None
     file: Optional[str] = None
     inputs: Optional[str] = None
-    iterations: Optional[int] = None
-    parallelism: Parallelism = Parallelism.JOBARRAY
+    # parallelism: Parallelism = Parallelism.JOBARRAY
     environment: Optional[List[EnvironmentVariable]] = None
     bind_mounts: Optional[List[BindMount]] = None
     no_cache: bool = False

@@ -2,16 +2,14 @@ import dataclasses
 import logging
 from datetime import timedelta
 from math import ceil
-from os import environ, linesep
-from os.path import join
+from os import linesep
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from slappt import docker
-from slappt.models import (
+from slappt.models import (  # Parallelism,
     BindMount,
     EnvironmentVariable,
-    Parallelism,
     Shell,
     SlapptConfig,
 )

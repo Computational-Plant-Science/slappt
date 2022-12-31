@@ -20,7 +20,6 @@ slurm scripts for apptainer jobs
 
    md/usage.md
    md/spec.md
-   md/sshlurm.md
 
 
 Indices and tables

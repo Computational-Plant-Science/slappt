@@ -31,11 +31,11 @@ slappt --image docker://alpine \
        --entrypoint "echo 'hello world'"
 ```
 
-## Multiple jobs
+## Inputs
 
-`slappt` is convenient not only for one-off container jobs, but for running multiple copies of a workflow, possibly in parallel (e.g. for Monte Carlo simulations), or mapping a workflow over a list of inputs. These use cases are accomplished with job arrays and can be configured via the `--iterations` and the `--inputs` options.
+`slappt` is convenient not only for one-off container jobs, but for mapping a workflow over a list of inputs. This is accomplished with [job arrays]() and can be configured via the `--inputs` options.
 
-**Note:** your job remains limited by the number of nodes allocated to it by the scheduler. To run containers in parallel, you must request multiple nodes.
+**Note:** your job's parallelism remains limited by the number of nodes allocated to it by the scheduler. To run containers in parallel, you must request multiple nodes.
 
 <!--
 By default, `slappt` uses Slurm [job arrays](https://slurm.schedmd.com/job_array.html) to submit containers in parallel. An alternative mechanism is the [TACC `launcher`](https://github.com/TACC/launcher).
@@ -43,15 +43,9 @@ By default, `slappt` uses Slurm [job arrays](https://slurm.schedmd.com/job_array
 To use the `launcher` instead of job arrays, add the `--parallelism launcher` option. This option is required on some TACC systems (e.g. [Stampede2](https://www.tacc.utexas.edu/systems/stampede2)) where job arrays are not available.
 -->
 
-### Iterations
+The `--inputs` option's value must be the path to a text file containing a list of inputs, one on each line. This can be useful for parameter sweeps or to process a collection of files.
 
-To run identical copies of a container, use the `--iterations` option. For example, to run 10 copies, use `--iterations 10`. The container will be run with the same parameters each time, with the `SLAPPT_ITERATION` environment variable set to the iteration number (starting at 1).
-
-### Inputs
-
-To map a container workflow over a set of inputs, use the `--inputs` option, whose value must be the path to a text file containing a list of inputs, one on each line. This can be useful for parameter sweeps or to process a collection of files.
-
-For instance, say we have some files we want to process in parallel:
+For instance, say we have some files:
 
 ```shell
 $ cat f1
@@ -86,3 +80,51 @@ It can be then submitted with, for instance:
 ```shell
 sbatch --array=1-2 job.sh
 ```
+
+## Submissions
+
+`slappt` can also submit jobs to a local or remote Slurm cluster via the `--submit` option. For instance, if you've cloned this repository to a cluster filesystem, standard Slurm commands (e.g. `sbatch`) are available:
+
+```shell
+slappt example/hello.yaml --submit
+```
+
+If successfully submitted, the job ID will be shown.
+
+To submit to a remote cluster, use the `--host` and `--username` options, as well as the optional `--password` for password authentication, or `--pkey` to provide a path to a private key file.
+
+**Note**: `sshlurm` is not compatible with multi-factor authentication.
+
+Say you have a set of parameters:
+
+```shell
+1
+2
+3
+```
+
+Assuming you're on a Slurm cluster with permission to submit to the `batch` partition, you can generate and submit a parameter sweep job script with:
+
+```shell
+slappt --image docker://alpine \
+       --shell sh \
+       --partition batch \
+       --entrypoint "echo $SLAPPT_INPUT" \
+       --inputs inputs.txt  \
+       --submit
+```
+
+You can also submit to a remote cluster. For instance, assuming you have key authentication set up, and your private key is the default location/name `~/.ssh/id_rsa`:
+
+```shell
+slappt --image docker://alpine \
+       --shell sh \
+       --partition batch \
+       --entrypoint "echo $SLAPPT_INPUT" \
+       --inputs inputs.txt \
+       --submit \
+       --host <your cluster IP or FQDN> \
+       --username <your username>
+```
+
+The `--password` or `--pkey` options can be used to provide a password or a private key file, respectively.
