@@ -2,22 +2,19 @@ import dataclasses
 import logging
 from datetime import timedelta
 from math import ceil
-from os import environ, linesep
-from os.path import join
+from os import linesep
 from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from slappt import docker
-from slappt.models import (
+from slappt.models import (  # Parallelism,
     BindMount,
     EnvironmentVariable,
-    Parallelism,
     Shell,
     SlapptConfig,
 )
 
 SHEBANG = "#!/bin/bash"
-LAUNCHER_SCRIPT_NAME = "launch"  # TODO make configurable
 
 
 class ScriptGenerator:
@@ -105,26 +102,14 @@ class ScriptGenerator:
         return headers
 
     def gen_job_command(self) -> List[str]:
-        if self.config.parallelism == Parallelism.LAUNCHER:
-            commands = self.gen_launcher_entrypoint()
-        elif self.config.parallelism == Parallelism.JOBARRAY:
-            commands = self.gen_job_array_script()
-        else:
-            raise ValueError(
-                f"Unsupported parallelism strategy {self.config.parallelism}"
-            )
-
-        self.logger.debug(f"Using run commands: {linesep.join(commands)}")
-        return commands
-
-    def gen_job_array_script(self) -> List[str]:
         commands = []
+
         if self.config.inputs:
             commands.append(
-                f"file=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
+                f"SLAPPT_INPUT=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
             )
 
-        commands = commands + ScriptGenerator.gen_apptainer_invocation(
+        commands = commands + ScriptGenerator.generate_invocation(
             work_dir=self.config.workdir,
             image=self.config.image,
             commands=self.config.entrypoint,
@@ -135,45 +120,18 @@ class ScriptGenerator:
             shell=self.config.shell,
             singularity=self.config.singularity,
         )
+
+        self.logger.debug(f"Using run commands: {linesep.join(commands)}")
         return commands
-
-    def gen_launcher_entrypoint(self) -> List[str]:
-        commands = []
-        commands.append(f"export LAUNCHER_WORKDIR={self.config.workdir}")
-        commands.append(
-            f"export LAUNCHER_JOB_FILE={environ.get(LAUNCHER_SCRIPT_NAME)}"
-        )
-        commands.append("$LAUNCHER_DIR/paramrun")
-        return commands
-
-    def gen_launcher_script(self) -> List[str]:
-        lines: List[str] = []
-        files = []  # TODO: read from inputs.list
-
-        for _ in range(0, self.config.iterations):
-            for file_name in files:
-                path = join(self.config.workdir, file_name)
-                lines = lines + ScriptGenerator.gen_apptainer_invocation(
-                    work_dir=self.config.workdir,
-                    image=self.config.image,
-                    commands=self.config.entrypoint.replace("$INPUT", path),
-                    env=self.config.environment,
-                    bind_mounts=self.config.bind_mounts,
-                    no_cache=self.config.no_cache,
-                    gpus=self.config.gpus,
-                    shell=self.config.shell,
-                    singularity=self.config.singularity,
-                )
-
-        return lines
 
     def gen_job_script(self) -> List[str]:
         headers = self.gen_job_headers()
+        precmds = self.config.pre if self.config.pre else []
         command = self.gen_job_command()
-        return [SHEBANG] + headers + command
+        return [SHEBANG] + headers + precmds + command
 
     @staticmethod
-    def gen_apptainer_invocation(
+    def generate_invocation(
         image: str,
         commands: str,
         work_dir: str = None,
@@ -187,30 +145,31 @@ class ScriptGenerator:
         singularity: bool = False,
     ) -> List[str]:
         command = ""
-
-        # prepend environment variables in SINGULARITYENV_<key> format
+        program = "singularity" if singularity else "apptainer"
+        # prepend env vars
         if env is not None:
             if len(env) > 0:
+                prefix = f"{program.upper()}ENV_"
                 command += " ".join(
                     [
-                        f"SINGULARITYENV_{v['key'].upper().replace(' ', '_')}=\"{v['value']}\""
+                        f"{prefix}{v['key'].upper().replace(' ', '_')}=\"{v['value']}\""
                         for v in env
                     ]
                 )
                 command += " "
 
         # command base
-        command += f"{'singularity' if singularity else 'apptainer'} exec"
+        command += f"{program} exec"
 
         # working directory (container home)
         if work_dir is not None:
             command += f" --home {work_dir}"
 
-        # add bind mount arguments
+        # bind mounts
         if bind_mounts is not None and len(bind_mounts) > 0:
             command += " --bind " + ",".join([str(bm) for bm in bind_mounts])
 
-        # whether to use the Singularity cache
+        # whether to use the cache
         if no_cache:
             command += " --disable-cache"
 
@@ -218,15 +177,17 @@ class ScriptGenerator:
         if gpus:
             command += " --nv"
 
-        # append the command
+        # shell selection
         if shell is None:
             shell = "sh"
+
+        # construct the command
         command += f' {image} {shell.value if isinstance(shell, Shell) else shell} -c "{commands}"'
 
-        # docker auth info (optional)
+        # docker auth info
         if docker_username is not None and docker_password is not None:
             command = (
-                f"SINGULARITY_DOCKER_USERNAME={docker_username} SINGULARITY_DOCKER_PASSWORD={docker_password} "
+                f"{program.upper()}_DOCKER_USERNAME={docker_username} {program.upper()}_DOCKER_PASSWORD={docker_password} "
                 + command
             )
 

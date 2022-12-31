@@ -1,11 +1,13 @@
 from os import environ
+from os.path import join
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 from slappt.models import SlapptConfig
+from slappt.slappt import submit_script
 from slappt.ssh import SSH
-from slappt.sshlurm import submit_script
 
 CLUSTER_HOST = environ.get("CLUSTER_HOST")
 CLUSTER_USER = environ.get("CLUSTER_USER")
@@ -30,7 +32,7 @@ SCRIPT_BODY = """\
 #SBATCH --output=slappt_test.%j.out
 #SBATCH --error=slappt_test.%j.err
 
-echo "hello world
+echo "hello world"
 """.format(
     partition=CLUSTER_PARTITION, email=CLUSTER_EMAIL
 )
@@ -50,6 +52,7 @@ def upload_script(local, remote):
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
 def test_submit_with_password_auth(tmp_path):
+    test_id = str(uuid4())
     script_path = tmp_path / SCRIPT_NAME
     with open(script_path, "w") as f:
         f.writelines(SCRIPT_BODY)
@@ -59,15 +62,15 @@ def test_submit_with_password_auth(tmp_path):
         port=22,
         username=CLUSTER_USER,
         password=CLUSTER_PASSWORD,
-        workdir=CLUSTER_HOME_DIR,
-        file=str(SCRIPT_PATH_REMOTE),
+        workdir=join(CLUSTER_HOME_DIR, test_id),
+        file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)
 
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
 def test_submit_with_key_auth(tmp_path):
+    test_id = str(uuid4())
     script_path = tmp_path / SCRIPT_NAME
     with open(script_path, "w") as f:
         f.writelines(SCRIPT_BODY)
@@ -77,8 +80,7 @@ def test_submit_with_key_auth(tmp_path):
         port=22,
         username=CLUSTER_USER,
         pkey=CLUSTER_KEY_PATH,
-        workdir=CLUSTER_HOME_DIR,
-        file=str(SCRIPT_PATH_REMOTE),
+        workdir=join(CLUSTER_HOME_DIR, test_id),
+        file=str(script_path),
     )
-    job_id = submit_script(config)
-    assert job_id.isdigit()
+    submit_script(config)

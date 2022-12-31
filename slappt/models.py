@@ -11,9 +11,9 @@ class Shell(Enum):
     SH = "sh"
 
 
-class Parallelism(Enum):
-    JOBARRAY = "jobarray"
-    LAUNCHER = "launcher"
+# class Parallelism(Enum):
+#     JOBARRAY = "jobarray"
+#     LAUNCHER = "launcher"
 
 
 @dataclass
@@ -35,19 +35,18 @@ class EnvironmentVariable:
 class SlapptConfig:
     # script attributes
     image: Optional[str] = None
+    shell: Shell = Shell.BASH
     partition: Optional[str] = None
     entrypoint: Optional[str] = None
     workdir: Optional[str] = None
     email: Optional[str] = None
     name: Optional[str] = None
     file: Optional[str] = None
-    shell: Shell = Shell.BASH
+    pre: Optional[List[str]] = None
     inputs: Optional[str] = None
-    iterations: Optional[int] = None
-    parallelism: Parallelism = Parallelism.JOBARRAY
+    # parallelism: Parallelism = Parallelism.JOBARRAY
     environment: Optional[List[EnvironmentVariable]] = None
     bind_mounts: Optional[List[BindMount]] = None
-    log_file: Optional[str] = None
     no_cache: bool = False
     gpus: int = 0
     time: str = "01:00:00"
@@ -64,7 +63,6 @@ class SlapptConfig:
     username: Optional[str] = None
     password: Optional[str] = None
     pkey: Optional[str] = None
-    key: Optional[str] = None
     allow_stderr: bool = False
     timeout: int = 15
 

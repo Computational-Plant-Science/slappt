@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-slappt: slurm scripts for apptainer jobs
+slurm scripts for apptainer jobs
 ========================================
 
 .. toctree::
@@ -19,8 +19,7 @@ slappt: slurm scripts for apptainer jobs
    :caption: Usage
 
    md/usage.md
-   md/commands.md
-   md/sshlurm.md
+   md/spec.md
 
 
 Indices and tables

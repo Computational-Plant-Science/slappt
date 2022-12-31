@@ -1,13 +1,20 @@
 import uuid
 from os import linesep
+from os.path import join
 from pathlib import Path
+from subprocess import PIPE, Popen
+from typing import List, Optional
 
 import click
 import yaml
+from _warnings import warn
 
 import slappt
-from slappt.models import Parallelism, Shell, SlapptConfig
+from slappt.exceptions import ExitStatusException
+from slappt.models import Shell, SlapptConfig
 from slappt.scripts import ScriptGenerator
+from slappt.ssh import SSH
+from slappt.utils import clean_html, parse_job_id
 
 
 def generate_script(config: SlapptConfig):
@@ -15,8 +22,162 @@ def generate_script(config: SlapptConfig):
     return generator.gen_job_script()
 
 
-@click.group(invoke_without_command=True)
-@click.pass_context
+def get_client(config: SlapptConfig) -> SSH:
+    if config.password:
+        return SSH(
+            host=config.host,
+            port=config.port,
+            username=config.username,
+            password=config.password,
+            timeout=config.timeout,
+        )
+    else:
+        return SSH(
+            host=config.host,
+            port=config.port,
+            username=config.username,
+            pkey=config.pkey,
+            timeout=config.timeout,
+        )
+
+
+def run_cmd(*args, verbose: bool = False, **kwargs):
+    args = [str(g) for g in args]
+
+    if verbose:
+        print(f"Running: {args}")
+
+    p = Popen(args, stdout=PIPE, stderr=PIPE, **kwargs)
+    stdout, stderr = p.communicate()
+    stdout = stdout.decode()
+    stderr = stderr.decode()
+    returncode = p.returncode
+
+    if verbose:
+        if stdout:
+            print(stdout)
+        if stderr:
+            print(stderr)
+
+    return returncode, stdout, stderr
+
+
+def submit_script(
+    config: SlapptConfig,
+    script: Optional[List[str]] = None,
+    verbose: bool = False,
+) -> str:
+    def read_stream(str, name="stdout"):
+        for line in iter(lambda: str.readline(2048), ""):
+            clean = clean_html(line).strip()
+            if verbose:
+                print(f"Received {name} from '{config.host}': '{clean}'")
+            yield clean
+
+    # the script's name
+    script_name = (
+        Path(config.file).name if config.file else f"{config.name}.sh"
+    )
+
+    # the job working directory
+    workdir = config.workdir if config.workdir else ""
+
+    # compose the submission command, determining if we have inputs to map over
+    input_lines = []
+    if config.inputs:
+        input_lines = Path(config.inputs).open("r").readlines()
+        command = (
+            f"sbatch --array=1-{len(input_lines)} {join(workdir, script_name)}"
+        )
+    else:
+        command = f"sbatch {join(workdir, script_name)}"
+
+    # copy files to the remote host
+    if config.host:
+        with get_client(config) as client:
+            with client.open_sftp() as sftp:
+
+                # create working directory
+                try:
+                    sftp.mkdir(workdir)
+                    if verbose:
+                        print(f"Created working directory: {workdir}")
+                except OSError:
+                    if verbose:
+                        print(f"Working directory already exists: {workdir}")
+
+                # copy inputs file if we have one
+                if config.inputs:
+                    remote_path = join(workdir, Path(config.inputs).name)
+                    with sftp.open(remote_path, "w") as remote_file:
+                        for line in input_lines:
+                            remote_file.write(f"{line}\n".encode("utf-8"))
+                        remote_file.seek(0)
+                        if verbose:
+                            print(f"Uploaded inputs file: {remote_path}")
+
+                # copy job script, or write it if provided in text
+                remote_path = join(workdir, script_name)
+                with sftp.open(remote_path, "w") as remote_file:
+                    if config.file:
+                        with Path(config.file).open("r") as local_file:
+                            for line in local_file.readlines():
+                                remote_file.write(f"{line}\n".encode("utf-8"))
+                    else:
+                        for line in script:
+                            remote_file.write(f"{line}\n".encode("utf-8"))
+                    remote_file.seek(0)
+                    if verbose:
+                        print(f"Uploaded job script: {remote_path}")
+
+            if verbose:
+                print(f"Submitting to {config.host}: {config.name}")
+
+            stdin, stdout, stderr = client.exec_command(command, get_pty=True)
+            stdin.close()
+
+            try:
+                stdout = [line for line in read_stream(stdout, "stdout")]
+                stderr = [line for line in read_stream(stderr, "stderr")]
+            except:
+                if stdout.channel.recv_exit_status() != 0:
+                    raise ExitStatusException(
+                        f"Received non-zero exit status from submission command on {config.host}\n{stdout if stdout is not None else ''}{stderr if stderr is not None else ''}"
+                    )
+                else:
+                    raise
+    else:
+        if not config.file:
+            with open(script_name, "w") as f:
+                f.write(linesep.join(script))
+            if verbose:
+                print(f"Wrote job script: {script_name}")
+
+        if verbose:
+            print(f"Submitting: {config.name}")
+
+        def expand(cmd):
+            return [c for c in cmd.split(" ") if c != ""]
+
+        for pre_cmd in config.pre if config.pre else []:
+            returncode, stdout, stderr = run_cmd(
+                *expand(pre_cmd), verbose=verbose
+            )
+
+            if returncode != 0:
+                raise ExitStatusException(
+                    f"Received non-zero exit status from pre-command: {stdout + stderr}"
+                )
+
+        returncode, stdout, stderr = run_cmd(*expand(command), verbose=verbose)
+
+        if returncode != 0:
+            raise ExitStatusException(
+                f"Received non-zero exit status from submission command: {stdout + stderr}"
+            )
+
+
+@click.command()
 @click.argument("file", required=False)
 @click.option(
     "--version",
@@ -37,15 +198,13 @@ def generate_script(config: SlapptConfig):
     type=click.Choice(["bash", "sh"], case_sensitive=False),
 )
 @click.option("--inputs", required=False)
-@click.option("--iterations", required=False)
-@click.option(
-    "--parallelism",
-    required=False,
-    type=click.Choice(["jobarray", "launcher"], case_sensitive=False),
-)
+# @click.option(
+#     "--parallelism",
+#     required=False,
+#     type=click.Choice(["jobarray", "launcher"], case_sensitive=False),
+# )
 @click.option("--environment", required=False, multiple=True)
 @click.option("--bind_mounts", required=False)
-@click.option("--log_file", required=False)
 @click.option("--no_cache", required=False, default=False)
 @click.option("--gpus", required=False, type=int, default=0)
 @click.option("--time", required=False, default="01:00:00")
@@ -55,9 +214,17 @@ def generate_script(config: SlapptConfig):
 @click.option("--cores", required=False, type=int, default=1)
 @click.option("--tasks", required=False, type=int, default=1)
 @click.option("--header_skip", required=False)
-@click.option("--singularity", required=False, type=bool, default=False)
+@click.option("--singularity", is_flag=True, default=False)
+@click.option("--submit", is_flag=True, default=False)
+@click.option("--host", required=False, type=str)
+@click.option("--port", required=False, type=int, default=22)
+@click.option("--username", required=False, type=str)
+@click.option("--password", required=False, type=str)
+@click.option("--pkey", required=False, type=str, default="~/.ssh/id_rsa")
+@click.option("--allow_stderr", required=False, type=bool, default=False)
+@click.option("--timeout", required=False, type=int, default=15)
+@click.option("--verbose", is_flag=True, default=False)
 def cli(
-    ctx,
     file,
     version,
     image,
@@ -68,11 +235,9 @@ def cli(
     name,
     shell,
     inputs,
-    iterations,
-    parallelism,
+    # parallelism,
     environment,
     bind_mounts,
-    log_file,
     no_cache,
     gpus,
     time,
@@ -83,10 +248,16 @@ def cli(
     tasks,
     header_skip,
     singularity,
+    submit,
+    host,
+    port,
+    username,
+    password,
+    pkey,
+    allow_stderr,
+    timeout,
+    verbose,
 ):
-    if ctx.invoked_subcommand:
-        return
-
     if version:
         click.echo(slappt.__version__)
         return
@@ -108,13 +279,11 @@ def cli(
             name=name if name else str(uuid.uuid4()),
             shell=Shell(shell),
             inputs=inputs,
-            iterations=iterations,
-            parallelism=Parallelism[parallelism.lower()]
-            if parallelism
-            else Parallelism.JOBARRAY,
+            # parallelism=Parallelism[parallelism.lower()]
+            # if parallelism
+            # else Parallelism.JOBARRAY,
             environment=environment,
             bind_mounts=bind_mounts,
-            log_file=log_file,
             no_cache=no_cache,
             gpus=gpus,
             time=time,
@@ -125,7 +294,18 @@ def cli(
             tasks=tasks,
             header_skip=header_skip,
             singularity=singularity,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            pkey=pkey,
+            allow_stderr=allow_stderr,
+            timeout=timeout,
         )
 
     script = generate_script(config)
-    click.echo(linesep.join(script))
+
+    if submit:
+        click.echo(submit_script(config, script=script, verbose=verbose))
+    else:
+        click.echo(linesep.join(script))
