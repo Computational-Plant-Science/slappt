@@ -45,7 +45,6 @@ def generate_script(config: SlapptConfig):
 )
 @click.option("--environment", required=False, multiple=True)
 @click.option("--bind_mounts", required=False)
-@click.option("--log_file", required=False)
 @click.option("--no_cache", required=False, default=False)
 @click.option("--gpus", required=False, type=int, default=0)
 @click.option("--time", required=False, default="01:00:00")
@@ -72,7 +71,6 @@ def cli(
     parallelism,
     environment,
     bind_mounts,
-    log_file,
     no_cache,
     gpus,
     time,
@@ -114,7 +112,6 @@ def cli(
             else Parallelism.JOBARRAY,
             environment=environment,
             bind_mounts=bind_mounts,
-            log_file=log_file,
             no_cache=no_cache,
             gpus=gpus,
             time=time,
