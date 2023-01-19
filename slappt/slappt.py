@@ -3,26 +3,18 @@ from os import linesep
 from os.path import join
 from pathlib import Path
 from subprocess import PIPE, Popen
-from typing import List, Optional
 
 import click
-import yaml
-from _warnings import warn
 
 import slappt
 from slappt.exceptions import ExitStatusException
 from slappt.models import Shell, SlapptConfig
 from slappt.scripts import ScriptGenerator
 from slappt.ssh import SSH
-from slappt.utils import clean_html, parse_job_id
+from slappt.utils import clean_html
 
 
-def generate_script(config: SlapptConfig):
-    generator = ScriptGenerator(config)
-    return generator.gen_job_script()
-
-
-def get_client(config: SlapptConfig) -> SSH:
+def get_ssh_client(config: SlapptConfig) -> SSH:
     if config.password:
         return SSH(
             host=config.host,
@@ -62,11 +54,7 @@ def run_cmd(*args, verbose: bool = False, **kwargs):
     return returncode, stdout, stderr
 
 
-def submit_script(
-    config: SlapptConfig,
-    script: Optional[List[str]] = None,
-    verbose: bool = False,
-) -> str:
+def submit_script(config, script, verbose: bool = False):
     def read_stream(str, name="stdout"):
         for line in iter(lambda: str.readline(2048), ""):
             clean = clean_html(line).strip()
@@ -94,7 +82,7 @@ def submit_script(
 
     # copy files to the remote host
     if config.host:
-        with get_client(config) as client:
+        with get_ssh_client(config) as client:
             with client.open_sftp() as sftp:
 
                 # create working directory
@@ -179,6 +167,7 @@ def submit_script(
 
 @click.command()
 @click.argument("file", required=False)
+@click.version_option(slappt.__version__)
 @click.option(
     "--version",
     "-v",
@@ -226,7 +215,6 @@ def submit_script(
 @click.option("--verbose", is_flag=True, default=False)
 def cli(
     file,
-    version,
     image,
     partition,
     entrypoint,
@@ -258,17 +246,12 @@ def cli(
     timeout,
     verbose,
 ):
-    if version:
-        click.echo(slappt.__version__)
-        return
+    # if version:
+    #     click.echo(slappt.__version__)
+    #     return
 
     if file:
-        if not Path(file).is_file():
-            raise ValueError(f"Invalid path to configuration file: {file}")
-
-        with open(file, "r") as f:
-            yml = yaml.safe_load(f)
-            config = SlapptConfig(**yml)
+        config = SlapptConfig.from_yaml(file)
     else:
         config = SlapptConfig(
             image=image,
@@ -303,9 +286,10 @@ def cli(
             timeout=timeout,
         )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
 
-    if submit:
-        click.echo(submit_script(config, script=script, verbose=verbose))
-    else:
+    if not submit:
         click.echo(linesep.join(script))
+    else:
+        submit_script(config, script, verbose)
