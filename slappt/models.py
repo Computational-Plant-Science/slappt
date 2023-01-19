@@ -1,8 +1,11 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from pprint import pformat
 from typing import List, Optional
+
+import yaml
 
 
 class Shell(Enum):
@@ -57,7 +60,6 @@ class SlapptConfig:
     tasks: int = 1
     header_skip: Optional[str] = None
     singularity: bool = False
-    # jobqueue attributes
     host: Optional[str] = None
     port: int = 22
     username: Optional[str] = None
@@ -68,3 +70,12 @@ class SlapptConfig:
 
     def __repr__(self):
         return pformat(deepcopy(self))
+
+    @staticmethod
+    def from_yaml(path):
+        if not Path(path).is_file():
+            raise ValueError(f"Invalid path to configuration file: {path}")
+
+        with open(path, "r") as f:
+            yml = yaml.safe_load(f)
+            return SlapptConfig(**yml)

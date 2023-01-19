@@ -7,7 +7,8 @@ from uuid import uuid4
 import pytest
 
 from slappt.models import SlapptConfig
-from slappt.slappt import generate_script, submit_script
+from slappt.scripts import ScriptGenerator
+from slappt.slappt import submit_script
 from slappt.ssh import SSH
 
 CLUSTER_HOST = environ.get("CLUSTER_HOST")
@@ -41,7 +42,7 @@ echo "hello world"
 
 
 # todo parametrize with optional params (e.g. account)
-def test_script_hello_world(tmp_path):
+def test_get_job_script_hello_world(tmp_path):
     config = SlapptConfig(
         name=str(uuid4()),
         image="alpine",
@@ -51,12 +52,13 @@ def test_script_hello_world(tmp_path):
         partition=CLUSTER_PARTITION,
     )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
 
 
-def test_script_with_inputs_file(tmp_path):
+def test_get_job_script_with_inputs_file(tmp_path):
     input_file_1 = tmp_path / "input_1.txt"
     input_file_2 = tmp_path / "input_2.txt"
     inputs_file = tmp_path / "inputs.txt"
@@ -81,13 +83,14 @@ def test_script_with_inputs_file(tmp_path):
         inputs=str(inputs_file),
     )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
     assert script[-2].startswith("SLAPPT_INPUT=")
 
 
-def test_script_with_singularity_flag(tmp_path):
+def test_get_job_script_with_singularity_flag(tmp_path):
     config = SlapptConfig(
         name=str(uuid4()),
         image="alpine",
@@ -98,14 +101,15 @@ def test_script_with_singularity_flag(tmp_path):
         singularity=True,
     )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
     assert any(s.startswith("singularity exec") for s in script)
     assert not any(s.startswith("apptainer exec") for s in script)
 
 
-def test_script_with_pre_commands(tmp_path):
+def test_get_job_script_with_pre_commands(tmp_path):
     precmds = ["echo 'pre command 1'", "echo 'pre command 2'"]
     config = SlapptConfig(
         name=str(uuid4()),
@@ -116,7 +120,8 @@ def test_script_with_pre_commands(tmp_path):
         partition=CLUSTER_PARTITION,
     )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
     assert not any(s.startswith("echo 'pre") for s in script)
@@ -131,7 +136,8 @@ def test_script_with_pre_commands(tmp_path):
         pre=precmds,
     )
 
-    script = generate_script(config)
+    generator = ScriptGenerator(config)
+    script = generator.get_job_script()
     pprint(script)
     assert script[0].startswith("#!/bin/bash")
     for cmd in precmds:
@@ -158,8 +164,10 @@ def upload_script(local, remote):
 def test_submit_with_password_auth(tmp_path):
     test_id = str(uuid4())
     script_path = tmp_path / SCRIPT_NAME
+
     with open(script_path, "w") as f:
         f.writelines(SCRIPT_BODY)
+
     upload_script(script_path, SCRIPT_PATH_REMOTE)
     config = SlapptConfig(
         host=CLUSTER_HOST,
@@ -169,15 +177,17 @@ def test_submit_with_password_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    submit_script(config)
+    submit_script(config, SCRIPT_BODY)
 
 
 @pytest.mark.skipif(not CLUSTER_HOST, reason="need Slurm cluster")
 def test_submit_with_key_auth(tmp_path):
     test_id = str(uuid4())
     script_path = tmp_path / SCRIPT_NAME
+
     with open(script_path, "w") as f:
         f.writelines(SCRIPT_BODY)
+
     upload_script(script_path, SCRIPT_PATH_REMOTE)
     config = SlapptConfig(
         host=CLUSTER_HOST,
@@ -187,4 +197,4 @@ def test_submit_with_key_auth(tmp_path):
         workdir=join(CLUSTER_HOME_DIR, test_id),
         file=str(script_path),
     )
-    submit_script(config)
+    submit_script(config, SCRIPT_BODY)

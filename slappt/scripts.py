@@ -1,5 +1,4 @@
 import dataclasses
-import logging
 from datetime import timedelta
 from math import ceil
 from os import linesep
@@ -7,12 +6,7 @@ from typing import List, Optional, Tuple
 from uuid import uuid4
 
 from slappt import docker
-from slappt.models import (  # Parallelism,
-    BindMount,
-    EnvironmentVariable,
-    Shell,
-    SlapptConfig,
-)
+from slappt.models import BindMount, EnvironmentVariable, Shell, SlapptConfig
 
 SHEBANG = "#!/bin/bash"
 
@@ -24,7 +18,6 @@ class ScriptGenerator:
             raise ValueError(f"Invalid config: {validation_errors}")
 
         self.config = config
-        self.logger = logging.getLogger(__name__)
 
     @staticmethod
     def validate_config(config: SlapptConfig) -> Tuple[bool, List[str]]:
@@ -70,7 +63,7 @@ class ScriptGenerator:
             hours = f"0{hours}"
         return f"{hours}:00:00"
 
-    def gen_job_headers(self) -> List[str]:
+    def get_job_headers(self) -> List[str]:
         job_name = self.config.name or str(uuid4())
         headers = [f"#SBATCH --job-name={job_name}"]
         headers.append(f"#SBATCH --output=slappt.{job_name}.%j.out")
@@ -98,10 +91,9 @@ class ScriptGenerator:
         ):
             headers.append(f"#SBATCH --mem={str(self.config.mem)}")
 
-        self.logger.debug(f"Using run headers: {linesep.join(headers)}")
         return headers
 
-    def gen_job_command(self) -> List[str]:
+    def get_job_command(self) -> List[str]:
         commands = []
 
         if self.config.inputs:
@@ -109,7 +101,7 @@ class ScriptGenerator:
                 f"SLAPPT_INPUT=$(head -n $SLURM_ARRAY_TASK_ID {self.config.inputs} | tail -1)"
             )
 
-        commands = commands + ScriptGenerator.generate_invocation(
+        commands = commands + ScriptGenerator.get_container_invocation(
             work_dir=self.config.workdir,
             image=self.config.image,
             commands=self.config.entrypoint,
@@ -121,17 +113,22 @@ class ScriptGenerator:
             singularity=self.config.singularity,
         )
 
-        self.logger.debug(f"Using run commands: {linesep.join(commands)}")
         return commands
 
-    def gen_job_script(self) -> List[str]:
-        headers = self.gen_job_headers()
+    def get_job_script(self, verbose=False) -> List[str]:
+        headers = self.get_job_headers()
         precmds = self.config.pre if self.config.pre else []
-        command = self.gen_job_command()
-        return [SHEBANG] + headers + precmds + command
+        command = self.get_job_command()
+        script = [SHEBANG] + headers + precmds + command
+
+        if verbose:
+            print(f"Generated script according to config {self.config.name}:")
+            print(linesep.join(script))
+
+        return script
 
     @staticmethod
-    def generate_invocation(
+    def get_container_invocation(
         image: str,
         commands: str,
         work_dir: str = None,
