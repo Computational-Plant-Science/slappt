@@ -84,7 +84,6 @@ def submit_script(config, script, verbose: bool = False):
     if config.host:
         with get_ssh_client(config) as client:
             with client.open_sftp() as sftp:
-
                 # create working directory
                 try:
                     sftp.mkdir(workdir)
